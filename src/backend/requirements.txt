@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+python-multipart
+python-dotenv
+numpy
+sentence-transformers
+langchain
+langchain-core
+langchain-community
+langchain-qdrant
+langchain-gigachat
+qdrant-client
+gigachat
+unstructured[pdf,docx]
+python-docx
