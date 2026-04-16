@@ -157,6 +157,12 @@
                   @click="openUploadDialog"
                   @mouseenter="speak('Кнопка загрузить файл')"
                   @mouseleave="stopSpeech">Загрузить файл</button>
+          <button type="button" class="search-button"
+                  @click="openDocumentsDialog"
+                  @mouseenter="speak('Кнопка показать документы выбранной роли')"
+                  @mouseleave="stopSpeech">
+            Документы роли
+          </button>
           <button type="button" class="search-button_new" id="newRequestButton"
                   @click="newRequest"
                   @mouseenter="speak('Кнопка новый запрос')"
@@ -199,6 +205,64 @@
              @mouseenter="speak(uploadResult.message)"
              @mouseleave="stopSpeech">
           {{ uploadResult.message }}
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showDocumentsDialog" class="modal-overlay" @click="closeDocumentsDialog">
+      <div class="modal-content documents-modal" @click.stop>
+        <h3
+            @mouseenter="speak('Документы для роли ' + getRoleName(selectedQueryType))"
+            @mouseleave="stopSpeech">
+          Документы: {{ getRoleName(selectedQueryType) }}
+        </h3>
+
+        <div v-if="documentsLoading" class="documents-status"
+             @mouseenter="speak('Загрузка списка документов')"
+             @mouseleave="stopSpeech">
+          Загрузка...
+        </div>
+
+        <div v-else-if="documentsError" class="documents-error"
+             @mouseenter="speak('Ошибка: ' + documentsError)"
+             @mouseleave="stopSpeech">
+          {{ documentsError }}
+        </div>
+
+        <div v-else>
+          <div class="documents-summary"
+               @mouseenter="speak(documentsSummaryText)"
+               @mouseleave="stopSpeech">
+            {{ documentsSummaryText }}
+          </div>
+
+          <ul v-if="roleDocuments.length > 0" class="documents-list">
+            <li v-for="document in roleDocuments" :key="document.name" class="documents-list-item"
+                @mouseenter="speak(document.name + '. Чанков: ' + document.chunks_count)"
+                @mouseleave="stopSpeech">
+              <span class="document-name">{{ document.name }}</span>
+              <span class="document-chunks">{{ document.chunks_count }} чанков</span>
+            </li>
+          </ul>
+
+          <div v-else class="documents-empty"
+               @mouseenter="speak('Для выбранной роли документы не загружены')"
+               @mouseleave="stopSpeech">
+            Для выбранной роли документы не загружены
+          </div>
+        </div>
+
+        <div class="modal-buttons">
+          <button @click="fetchRoleDocuments" :disabled="documentsLoading" class="search-button"
+                  @mouseenter="speak(documentsLoading ? 'Список загружается' : 'Обновить список документов')"
+                  @mouseleave="stopSpeech">
+            {{ documentsLoading ? 'Обновление...' : 'Обновить' }}
+          </button>
+          <button @click="closeDocumentsDialog" class="search-button cancel-button"
+                  @mouseenter="speak('Кнопка закрыть')"
+                  @mouseleave="stopSpeech">
+            Закрыть
+          </button>
         </div>
       </div>
     </div>
@@ -349,6 +413,56 @@ body.high-contrast-mode .speech-btn:hover {
   color: #2c5aa0;
 }
 
+.documents-modal {
+  max-width: 560px;
+  max-height: 80vh;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.documents-modal h3 {
+  text-align: center;
+}
+
+.documents-status,
+.documents-empty,
+.documents-summary {
+  margin-bottom: 16px;
+  color: #2c5aa0;
+  line-height: 1.4;
+}
+
+.documents-error {
+  margin-bottom: 16px;
+  color: #721c24;
+  line-height: 1.4;
+}
+
+.documents-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 20px;
+}
+
+.documents-list-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid #e6f2ff;
+}
+
+.document-name {
+  overflow-wrap: anywhere;
+  color: #1f2937;
+}
+
+.document-chunks {
+  flex: 0 0 auto;
+  color: #666666;
+  font-size: 13px;
+}
+
 body.high-contrast-mode .error-message {
   background: #000000 !important;
   color: #ff4444 !important;
@@ -375,6 +489,22 @@ body.high-contrast-mode .upload-result {
   background: #000000 !important;
   border: 2px solid #ffffff !important;
   color: #ffffff !important;
+}
+
+body.high-contrast-mode .documents-status,
+body.high-contrast-mode .documents-empty,
+body.high-contrast-mode .documents-summary,
+body.high-contrast-mode .document-name,
+body.high-contrast-mode .document-chunks {
+  color: #ffffff !important;
+}
+
+body.high-contrast-mode .documents-error {
+  color: #ff4444 !important;
+}
+
+body.high-contrast-mode .documents-list-item {
+  border-bottom: 1px solid #ffffff !important;
 }
 
 @media (max-width: 768px) {
@@ -1081,13 +1211,30 @@ export default {
       loading: false,
       error: null,
       showUploadDialog: false,
+      showDocumentsDialog: false,
       selectedFile: null,
       uploading: false,
       uploadResult: null,
+      documentsLoading: false,
+      documentsError: null,
+      documentsData: null,
       isHighContrast: false,
       selectedQueryType: 'student',
       speechEnabled: true,
       currentChatHistory: null
+    }
+  },
+  computed: {
+    roleDocuments() {
+      return this.documentsData?.documents || [];
+    },
+
+    documentsSummaryText() {
+      if (!this.documentsData) {
+        return 'Список документов ещё не загружен';
+      }
+
+      return `Документов: ${this.documentsData.total_documents}. Чанков: ${this.documentsData.total_chunks}`;
     }
   },
   mounted() {
@@ -1159,6 +1306,9 @@ export default {
     onQueryTypeChange() {
       const roleName = this.getRoleName(this.selectedQueryType);
       this.speak(`Выбрана роль: ${roleName}`);
+      if (this.showDocumentsDialog) {
+        this.fetchRoleDocuments();
+      }
     },
 
     newRequest() {
@@ -1409,6 +1559,41 @@ export default {
       this.stopSpeech();
     },
 
+    openDocumentsDialog() {
+      this.showDocumentsDialog = true;
+      this.documentsError = null;
+      this.speak(`Открыт список документов для роли: ${this.getRoleName(this.selectedQueryType)}`);
+      this.fetchRoleDocuments();
+    },
+
+    closeDocumentsDialog() {
+      this.showDocumentsDialog = false;
+      this.documentsError = null;
+      this.stopSpeech();
+    },
+
+    async fetchRoleDocuments() {
+      this.documentsLoading = true;
+      this.documentsError = null;
+
+      try {
+        const response = await axios.get(`${API_BASE_URL}/documents`, {
+          params: {
+            role: this.getApiRole(this.selectedQueryType)
+          }
+        });
+
+        this.documentsData = response.data;
+        this.speak(this.documentsSummaryText);
+      } catch (error) {
+        console.error('Ошибка загрузки списка документов:', error);
+        this.documentsError = error.response?.data?.detail || 'Не удалось загрузить список документов';
+        this.speak('Не удалось загрузить список документов');
+      } finally {
+        this.documentsLoading = false;
+      }
+    },
+
     handleFileSelect(event) {
       this.selectedFile = event.target.files[0];
       if (this.selectedFile) {
@@ -1444,6 +1629,9 @@ export default {
         }
 
         this.speak("Файл успешно загружен");
+        if (this.showDocumentsDialog) {
+          await this.fetchRoleDocuments();
+        }
 
         setTimeout(() => {
           this.closeUploadDialog();

@@ -7,7 +7,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 from typing import List, Optional
 import os
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
@@ -48,6 +48,18 @@ class DocumentUploadResponse(BaseModel):
     message: str
     chunks_created: int
     document_name: str
+
+
+class DocumentSummary(BaseModel):
+    name: str
+    chunks_count: int
+
+
+class DocumentsByRoleResponse(BaseModel):
+    role: str
+    total_documents: int
+    total_chunks: int
+    documents: List[DocumentSummary]
 
 
 class HealthResponse(BaseModel):
@@ -242,6 +254,46 @@ def count_indexed_chunks(role: Optional[str] = None) -> int:
         count_filter=count_filter,
         exact=True
     ).count
+
+
+def list_documents_by_role(role: str) -> DocumentsByRoleResponse:
+    validate_role(role)
+    ensure_qdrant_collection()
+
+    documents: dict[str, int] = {}
+    next_offset = None
+
+    while True:
+        points, next_offset = get_or_create_qdrant_client().scroll(
+            collection_name=QDRANT_COLLECTION_NAME,
+            scroll_filter=build_role_filter(role),
+            limit=256,
+            offset=next_offset,
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        for point in points:
+            payload = point.payload or {}
+            metadata = payload.get("metadata") or {}
+            source = metadata.get("source")
+            if source:
+                documents[source] = documents.get(source, 0) + 1
+
+        if next_offset is None:
+            break
+
+    summaries = [
+        DocumentSummary(name=name, chunks_count=chunks_count)
+        for name, chunks_count in sorted(documents.items(), key=lambda item: item[0].lower())
+    ]
+
+    return DocumentsByRoleResponse(
+        role=role,
+        total_documents=len(summaries),
+        total_chunks=sum(item.chunks_count for item in summaries),
+        documents=summaries
+    )
 
 
 def validate_role(role: str) -> None:
@@ -645,6 +697,16 @@ async def get_documents_count():
         return {"total_chunks": count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка получения статистики: {str(e)}")
+
+
+@app.get("/documents", response_model=DocumentsByRoleResponse)
+async def get_documents_by_role(role: str = Query(...)):
+    try:
+        return list_documents_by_role(role)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка получения списка документов: {str(e)}")
 
 
 if __name__ == "__main__":
