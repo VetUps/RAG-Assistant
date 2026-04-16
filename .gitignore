@@ -1,0 +1,46 @@
+# ==================== Dependencies ====================
+node_modules
+
+# ==================== Build outputs ====================
+dist/
+htmlcov/
+site/
+docs_build/
+site_build/
+
+# ==================== Environment & Config ====================
+.env
+env/
+env3.*/
+venv/
+
+# ==================== Log files ====================
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+log.txt
+
+# ==================== Editor & IDE ====================
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ==================== Python specific ====================
+.ipynb_checkpoints
+.mypy_cache
+__pycache__/
+.pytest_cache
+.coverage*
+coverage.xml
+Pipfile.lock
+test.db
+
+# ==================== Other ====================
+.netlify
+docs.zip
+archive.zip
